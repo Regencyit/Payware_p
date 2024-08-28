@@ -499,13 +499,13 @@ def get_employee_base_salary_in_hours(employee,payroll_date):
 			fields=['name', 'base'],
 			order_by='`from_date` DESC, `creation` DESC',
 			limit=1)
-	last_salary_assignment = last_salary_assignment[0] if last_salary_assignment else None
+	last_salary_assignment = last_salary_assignment[0].base if last_salary_assignment else 0
 	# payroll_date = datetime.strptime(payroll_date, '%Y-%m-%d')
 
 	working_hours_per_month = frappe.db.get_single_value('Payware Settings', 'working_hours_per_month')
 	if not working_hours_per_month:
 		frappe.throw(_("Working Hours per Month not defind in Payware settings. Define it there and try again."))
-	base_salary_in_hours = (last_salary_assignment.base or 0) / working_hours_per_month
+	base_salary_in_hours = (last_salary_assignment or 0) / working_hours_per_month
 	return {"base_salary_in_hours": base_salary_in_hours}
 
 #
@@ -568,6 +568,48 @@ def money_in_words(number, main_currency = None, fraction_currency=None):
 
 def set_employee_base_salary_in_hours(doc,method):
 	if doc.based_on_hourly_rate:
-		doc.payroll_date = str(doc.payroll_date)
-		base_salary_in_hours = get_employee_base_salary_in_hours(doc.employee,doc.payroll_date)["base_salary_in_hours"]
-		doc.amount = doc.hourly_rate / 100 * doc.no_of_hours * base_salary_in_hours
+		salary_component = doc.salary_component
+		hourly_rate = frappe.get_all("Salary Structure Assignment", filters={
+			'employee': doc.employee, 'from_date': ['<=', doc.payroll_date]},
+				fields=['name', salary_component],
+				order_by='`from_date` DESC, `creation` DESC',
+				limit=1)
+		
+		doc.hourly_rate = float(hourly_rate[0][salary_component]) if hourly_rate else 0.0
+		if doc.hourly_rate == 0.0:
+				return frappe.throw("No "+ salary_component +"set for : " + doc.employee)
+		doc.amount = doc.hourly_rate * doc.no_of_hours
+		'''
+		#doc.payroll_date = str(doc.payroll_date)
+		#base_salary_in_hours = get_employee_base_salary_in_hours(doc.employee,doc.payroll_date)["base_salary_in_hours"]
+		#doc.amount = doc.hourly_rate * doc.no_of_hours
+		if doc.salary_component == 'Overtime':
+			hourly_rate = frappe.get_all("Salary Structure Assignment", filters={
+				'employee': doc.employee, 'from_date': ['<=', doc.payroll_date]},
+				fields=['name', 'custom_hourly_overtime_rate'],
+				order_by='`from_date` DESC, `creation` DESC',
+				limit=1)
+			doc.hourly_rate = float(hourly_rate[0].custom_hourly_overtime_rate) if hourly_rate else 0.0
+			if doc.hourly_rate == 0.0:
+				return frappe.throw("No Overtime set for : " + doc.employee)
+			doc.amount = doc.hourly_rate * doc.no_of_hours
+		if doc.salary_component == 'Night Allowance':
+			hourly_rate = frappe.get_all("Salary Structure Assignment", filters={
+				'employee': doc.employee, 'from_date': ['<=', doc.payroll_date]},
+				fields=['name', 'custom_night_allowance_rate'],
+				order_by='`from_date` DESC, `creation` DESC',
+				limit=1)
+			doc.hourly_rate = float(hourly_rate[0].custom_night_allowance_rate) if hourly_rate else 0.0 
+			if doc.hourly_rate == 0.0:
+				return frappe.throw("No Night Allowance rate set for : " + doc.employee)
+			doc.amount = doc.hourly_rate * doc.no_of_hours
+		if doc.salary_component == 'Public Holiday Overtime':
+			hourly_rate = frappe.get_all("Salary Structure Assignment", filters={
+				'employee': doc.employee, 'from_date': ['<=', doc.payroll_date]},
+				fields=['name', 'custom_overtime_rate_for_public_holiday'],
+				order_by='`from_date` DESC, `creation` DESC',
+				limit=1)
+			doc.hourly_rate = float(hourly_rate[0].custom_overtime_rate_for_public_holiday) if hourly_rate else 0.0 
+			if doc.hourly_rate == 0.0:
+				return frappe.throw("No Public Holiday Overtime rate set for : " + doc.employee)
+			doc.amount = doc.hourly_rate * doc.no_of_hours '''
